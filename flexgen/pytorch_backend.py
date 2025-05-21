@@ -62,12 +62,12 @@ def precompute_freqs_cis(dim: int, end: int, inv_freq, theta= 10000.0):
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
     return freqs_cis
 
-def rms_norm(hidden_states, weight, variance_epsilon=1e-5):
-    input_dtype = hidden_states.dtype
-    hidden_states = hidden_states.to(torch.float32)
-    variance = hidden_states.pow(2).mean(-1, keepdim=True)
-    hidden_states = hidden_states * torch.rsqrt(variance + variance_epsilon)
-    return weight * hidden_states.to(input_dtype)
+def rms_norm(inputs, weight, variance_epsilon=1e-5):
+    input_dtype = inputs.dtype
+    inputs = inputs.to(torch.float32)
+    variance = inputs.pow(2).mean(-1, keepdim=True)
+    inputs = inputs * torch.rsqrt(variance + variance_epsilon)
+    return weight * inputs.to(input_dtype)
 
 def sample_top_p(probs, p):
     probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
@@ -574,7 +574,6 @@ class TorchDevice:
         b, s, h = inputs.shape
         head_dim = h // n_head
         scaling = head_dim ** -0.5
-        freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
         hidden = rms_norm(inputs.data, input_layernorm.data)
         # hidden = F.layer_norm(inputs.data, (h,), weight=input_layernorm.data)
         q = F.linear(hidden, w_q.data) * scaling
@@ -585,6 +584,7 @@ class TorchDevice:
         k = k.view(b, s, n_head, head_dim)
         v = v.view(b, s, n_head, head_dim)
 
+        freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
         q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[:s])
 
         # shape: (b * n_head, s, head_dim)
@@ -645,7 +645,6 @@ class TorchDevice:
         head_dim = h // n_head
         scaling = head_dim ** -0.5
 
-        freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
         hidden = rms_norm(inputs.data, input_layernorm.data)
         # hidden = F.layer_norm(inputs.data, (h,), weight=input_layernorm.data)
 
@@ -658,6 +657,7 @@ class TorchDevice:
         k = k.view(b, tgt_s, n_head, head_dim)
         v = v.view(b, tgt_s, n_head, head_dim)
 
+        freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
         q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[src_s: src_s + tgt_s])
 
         # shape: (b * n_head, 1, head_dim)
