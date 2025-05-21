@@ -65,7 +65,10 @@ def precompute_freqs_cis(dim: int, end: int, inv_freq, theta= 10000.0):
 def rms_norm(hidden_states, weight, variance_epsilon=1e-5):
     input_dtype = hidden_states.dtype
     hidden_states = hidden_states.to(torch.float32)
+
     variance = hidden_states.pow(2).mean(-1, keepdim=True)
+    variance = torch.clamp(variance, min=1e-9)
+
     hidden_states = hidden_states * torch.rsqrt(variance + variance_epsilon)
     return weight * hidden_states.to(input_dtype)
 
