@@ -453,7 +453,7 @@ class LlamaMLP:
         return (batch_size, seq_len, self.config.input_dim), self.config.dtype
 
     def forward(self, 
-        x,
+        hidden,
         cache_read_buf,
         weight_read_buf,
         attention_mask,
@@ -462,7 +462,7 @@ class LlamaMLP:
         k: int = 0
         ):
         donate = [False] * 9
-        h, donate[0] = x.val, True
+        h, donate[0] = hidden.val, True
 
         if k == self.policy.num_gpu_batches - 1:
             # Clear the weight_read_buf if it is the last gpu batch
@@ -473,7 +473,7 @@ class LlamaMLP:
              (up, _), (post_attention_layernorm, _)) = weight_read_buf.val
 
         h = self.compute.mlp_llama(h, gate, down, up, donate, self.config, post_attention_layernorm)
-        x.val = h
+        hidden.val = h
 
 class OutputEmbed:
     def __init__(self, config, env, policy):
@@ -1203,7 +1203,7 @@ def get_test_inputs(prompt_len, num_prompts, tokenizer):
 def run_flexgen(args):
     print(f"<run_flexgen>: args.model: {args.model}")
     tokenizer = AutoTokenizer.from_pretrained(args.model, padding_side="left")
-    tokenizer.pad_token = tokenizer.bos_token # '[PAD]'
+    tokenizer.pad_token = '[PAD]'
     num_prompts = args.num_gpu_batches * args.gpu_batch_size
     prompt_len, gen_len, cut_gen_len = args.prompt_len, args.gen_len, args.cut_gen_len
     # Task and policy
