@@ -1202,7 +1202,7 @@ def get_test_inputs(prompt_len, num_prompts, tokenizer):
 
 def run_flexgen(args):
     print(f"<run_flexgen>: args.model: {args.model}")
-    tokenizer = AutoTokenizer.from_pretrained(args.model, padding_side="left")
+    tokenizer = AutoTokenizer.from_pretrained(args.model, padding_side="left", legacy=False)
     tokenizer.pad_token = '[PAD]'
     num_prompts = args.num_gpu_batches * args.gpu_batch_size
     prompt_len, gen_len, cut_gen_len = args.prompt_len, args.gen_len, args.cut_gen_len
