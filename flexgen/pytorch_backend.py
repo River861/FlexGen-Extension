@@ -65,10 +65,7 @@ def precompute_freqs_cis(dim: int, end: int, inv_freq, theta= 10000.0):
 def rms_norm(hidden_states, weight, variance_epsilon=1e-5):
     input_dtype = hidden_states.dtype
     hidden_states = hidden_states.to(torch.float32)
-
     variance = hidden_states.pow(2).mean(-1, keepdim=True)
-    variance = torch.clamp(variance, min=1e-9)
-
     hidden_states = hidden_states * torch.rsqrt(variance + variance_epsilon)
     return weight * hidden_states.to(input_dtype)
 
@@ -349,6 +346,8 @@ class TorchDevice:
         # output embedding
         logits = F.linear(hidden, w_token.data)
         last_token_logits = logits[:,-1,:]
+
+        last_token_logits = torch.nan_to_num(last_token_logits, nan=0.0, posinf=0.0, neginf=0.0)
 
         if do_sample and not temperature < 1e-5:
             probs = torch.softmax(last_token_logits / temperature, dim=-1)
