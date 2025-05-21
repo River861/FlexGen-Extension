@@ -13,7 +13,7 @@ import numpy as np
 import torch
 import torch.utils.checkpoint
 from flexgen.compression import CompressionConfig
-from flexgen.llama_config import LlamaConfig, get_llama_config, download_llama_weights
+from flexgen.llama_config import LlamaConfig, get_llama_config, download_llama_weights_old
 from flexgen.pytorch_backend import fix_recursive_import, general_copy, DeviceType, TorchDevice, TorchDisk, \
     TorchMixedDevice
 from flexgen.utils import (Task, ExecutionEnv, GB, T, ValueHolder,
@@ -661,7 +661,7 @@ class LlamaLM:
             os.path.join(self.path, f"{self.config.name}-np")))
         check_path = os.path.join(expanded_path, "embed_tokens.weight")
         if not os.path.exists(check_path) and DUMMY_WEIGHT not in check_path:
-            download_llama_weights(self.config.name, self.path)
+            download_llama_weights_old(self.config.name, self.path)
         self.layers[j].init_weight(self.weight_home[j], expanded_path)
 
     def load_weight(self, i, j, k, overlap=True):
