@@ -453,7 +453,7 @@ class LlamaMLP:
         return (batch_size, seq_len, self.config.input_dim), self.config.dtype
 
     def forward(self, 
-        hidden,
+        x,
         cache_read_buf,
         weight_read_buf,
         attention_mask,
@@ -462,7 +462,7 @@ class LlamaMLP:
         k: int = 0
         ):
         donate = [False] * 9
-        h, donate[0] = hidden.val, True
+        h, donate[0] = x.val, True
 
         if k == self.policy.num_gpu_batches - 1:
             # Clear the weight_read_buf if it is the last gpu batch
@@ -473,7 +473,7 @@ class LlamaMLP:
              (up, _), (post_attention_layernorm, _)) = weight_read_buf.val
 
         h = self.compute.mlp_llama(h, gate, down, up, donate, self.config, post_attention_layernorm)
-        hidden.val = h
+        x.val = h
 
 class OutputEmbed:
     def __init__(self, config, env, policy):
@@ -1271,7 +1271,7 @@ def run_flexgen(args):
     _, cpu_peak_mem = cpu.mem_stats()
 
     if DUMMY_WEIGHT not in args.path:
-        outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=False)
+        outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
         show_str = "Outputs:\n" + 70 * '-' + "\n"
         for i in [0, len(outputs)-1]:
             show_str += f"{i}: {outputs[i]}\n"
