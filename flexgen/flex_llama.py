@@ -839,7 +839,7 @@ class LlamaLM:
         self,
         inputs,
         max_new_tokens: int=32,
-        do_sample: bool=False,
+        do_sample: bool=True,
         temperature: float=0.6,
         stop: Optional[int] = None,
         debug_mode: Optional[str] = None,
