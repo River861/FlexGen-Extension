@@ -351,6 +351,7 @@ class TorchDevice:
 
         if do_sample and not temperature < 1e-5:
             probs = torch.softmax(last_token_logits / temperature, dim=-1)
+            probs = torch.clamp(probs, min=1e-8)
             ids = torch.multinomial(probs, num_samples=1)
         else:
             ids = last_token_logits.argmax(dim=1, keepdim=True)
