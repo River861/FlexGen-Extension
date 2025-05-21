@@ -250,14 +250,14 @@ class TorchDevice:
             b = policy.gpu_batch_size
             n_head = config.n_head
             head_dim = config.input_dim // n_head
-            max_ses = task.prompt_len + task.gen_len - 1
+            seq_len = task.prompt_len + task.gen_len - 1
             self.attention_compute_workspace = []
             self.workspace_pt = 0
 
             # We currently separate SelfAttention and MLP as two layers,
             # so we only need one workspace instead of two.
             for i in range(1 if policy.sep_layer else 2):
-                shape = (max_ses, b * n_head, head_dim)
+                shape = (seq_len, b * n_head, head_dim)
                 k_cache = self.allocate(shape, np.float32, pin_memory=False)
                 v_cache = self.allocate(shape, np.float32, pin_memory=False)
                 self.attention_compute_workspace.append((k_cache, v_cache))
@@ -310,7 +310,7 @@ class TorchDevice:
         data = token_embed + pos_embed
         return TorchTensor.create_from_torch(data, self)
     
-    ## ses is here key states shape [-2]
+    ## seq_len is here key states shape [-2]
     def llama_input_embed(self, inputs, attention_mask, w_token, pad_token_id, donate, token_type_embeddings):
         # decompress weights
         if w_token.device.device_type == DeviceType.COMPRESSED:
