@@ -1201,6 +1201,8 @@ def get_test_inputs(prompt_len, num_prompts, tokenizer):
     ]
     input_ids = tokenizer(prompts, padding="max_length",
                           max_length=prompt_len).input_ids
+    for i in range(len(input_ids)):
+        input_ids[i] = input_ids[i][:prompt_len]
     return (input_ids[0],) * num_prompts
 
 def run_flexgen(args):
