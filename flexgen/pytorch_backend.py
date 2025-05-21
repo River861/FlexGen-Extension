@@ -62,12 +62,12 @@ def precompute_freqs_cis(dim: int, end: int, inv_freq, theta= 10000.0):
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
     return freqs_cis
 
-def rms_norm(hidden_states, weight, variance_epsilon=1e-5):
-    input_dtype = hidden_states.dtype
-    hidden_states = hidden_states.to(torch.float32)
-    variance = hidden_states.pow(2).mean(-1, keepdim=True)
-    hidden_states = hidden_states * torch.rsqrt(variance + variance_epsilon)
-    return weight * hidden_states.to(input_dtype)
+def rms_norm(inputs, weight, variance_epsilon=1e-5):
+    input_dtype = inputs.dtype
+    inputs = inputs.to(torch.float32)
+    variance = inputs.pow(2).mean(-1, keepdim=True)
+    inputs = inputs * torch.rsqrt(variance + variance_epsilon)
+    return weight * inputs.to(input_dtype)
 
 def sample_top_p(probs, p):
     probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
@@ -250,14 +250,14 @@ class TorchDevice:
             b = policy.gpu_batch_size
             n_head = config.n_head
             head_dim = config.input_dim // n_head
-            max_seq_len = task.prompt_len + task.gen_len - 1
+            max_ses = task.prompt_len + task.gen_len - 1
             self.attention_compute_workspace = []
             self.workspace_pt = 0
 
             # We currently separate SelfAttention and MLP as two layers,
             # so we only need one workspace instead of two.
             for i in range(1 if policy.sep_layer else 2):
-                shape = (max_seq_len, b * n_head, head_dim)
+                shape = (max_ses, b * n_head, head_dim)
                 k_cache = self.allocate(shape, np.float32, pin_memory=False)
                 v_cache = self.allocate(shape, np.float32, pin_memory=False)
                 self.attention_compute_workspace.append((k_cache, v_cache))
@@ -310,7 +310,7 @@ class TorchDevice:
         data = token_embed + pos_embed
         return TorchTensor.create_from_torch(data, self)
     
-    ## seq_len is here key states shape [-2]
+    ## ses is here key states shape [-2]
     def llama_input_embed(self, inputs, attention_mask, w_token, pad_token_id, donate, token_type_embeddings):
         # decompress weights
         if w_token.device.device_type == DeviceType.COMPRESSED:
@@ -562,7 +562,7 @@ class TorchDevice:
         return TorchTensor.create_from_torch(value, self), k_new, v_new
     
 
-    def mha_llama(self, hidden_states, attention_mask, w_q, w_k, w_v, w_out, n_head, donate, compress_cache, comp_config, input_layernorm, rotary_emb_inv_freq):
+    def mha_llama(self, inputs, attention_mask, w_q, w_k, w_v, w_out, n_head, donate, compress_cache, comp_config, input_layernorm, rotary_emb_inv_freq):
         """Multi-head attention (prefill phase)."""
         # decompress weight
         if w_q.device.device_type == DeviceType.COMPRESSED:
@@ -571,50 +571,49 @@ class TorchDevice:
             w_v = w_v.device.decompress(w_v)
             w_out = w_out.device.decompress(w_out)
 
-        bsz,q_len,h = hidden_states.shape
-
+        b, s, h = inputs.shape
         head_dim = h // n_head
-        freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
         scaling = head_dim ** -0.5
-        hidden = rms_norm(hidden_states.data, input_layernorm.data)
-        # hidden = F.layer_norm(hidden_states.data, (h,), weight=input_layernorm.data)
+        hidden = rms_norm(inputs.data, input_layernorm.data)
+        # hidden = F.layer_norm(inputs.data, (h,), weight=input_layernorm.data)
         q = F.linear(hidden, w_q.data) * scaling
         k = F.linear(hidden, w_k.data)
         v = F.linear(hidden, w_v.data)
 
-        q = q.view(bsz, q_len, n_head, head_dim)
-        k = k.view(bsz, q_len, n_head, head_dim)
-        v = v.view(bsz, q_len, n_head, head_dim)
+        q = q.view(b, s, n_head, head_dim)
+        k = k.view(b, s, n_head, head_dim)
+        v = v.view(b, s, n_head, head_dim)
 
-        q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[:q_len])
+        freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
+        q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[:s])
 
         # shape: (b * n_head, s, head_dim)
-        q = q.permute(0, 2, 1, 3).reshape(bsz * n_head, q_len, head_dim)
+        q = q.permute(0, 2, 1, 3).reshape(b * n_head, s, head_dim)
         # shape: (b * n_head, head_dim, s)
-        k = k.permute(0, 2, 3, 1).reshape(bsz * n_head, head_dim, q_len)
+        k = k.permute(0, 2, 3, 1).reshape(b * n_head, head_dim, s)
         # shape: (b * n_head, s, head_dim)
-        v = v.permute(0, 2, 1, 3).reshape(bsz * n_head, q_len, head_dim)
+        v = v.permute(0, 2, 1, 3).reshape(b * n_head, s, head_dim)
 
         attn_weights = torch.bmm(q, k)
 
-        idx = torch.arange(q_len, device=self.dev)
-        causal_mask = (idx <= idx.view(q_len, 1)).view(1, 1, q_len, q_len)
-        mask = attention_mask.data.view(bsz, 1, 1, q_len) & causal_mask
+        idx = torch.arange(s, device=self.dev)
+        causal_mask = (idx <= idx.view(s, 1)).view(1, 1, s, s)
+        mask = attention_mask.data.view(b, 1, 1, s) & causal_mask
 
         # shape: (b, n_head, s, s)
-        attn_weights = attn_weights.view(bsz, n_head, q_len, q_len)
+        attn_weights = attn_weights.view(b, n_head, s, s)
         attn_weights = torch.where(mask, attn_weights, -1e4)
-        attn_weights = attn_weights.view(bsz * n_head, q_len, q_len)
+        attn_weights = attn_weights.view(b * n_head, s, s)
         attn_weights = F.softmax(attn_weights, dim=2)
         # shape: (b, n_head, s, head_dim)
-        value = torch.bmm(attn_weights, v).view(bsz, n_head, q_len, head_dim)
+        value = torch.bmm(attn_weights, v).view(b, n_head, s, head_dim)
         # shape: (b, s, h)
-        value = value.transpose(1, 2).reshape(bsz, q_len, h)
+        value = value.transpose(1, 2).reshape(b, s, h)
         value = F.linear(value, w_out.data)
 
-        value.add_(hidden_states.data)
+        value.add_(inputs.data)
 
-        if donate[0]: hidden_states.delete()
+        if donate[0]: inputs.delete()
         if donate[1]: attention_mask.delete()
 
         # (s, b * n_head, head_dim)
@@ -644,7 +643,6 @@ class TorchDevice:
         b, tgt_s, h = inputs.shape
         src_s = attention_mask.shape[1]
         head_dim = h // n_head
-        freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
         scaling = head_dim ** -0.5
 
         hidden = rms_norm(inputs.data, input_layernorm.data)
@@ -658,6 +656,8 @@ class TorchDevice:
         q = q.view(b, tgt_s, n_head, head_dim)
         k = k.view(b, tgt_s, n_head, head_dim)
         v = v.view(b, tgt_s, n_head, head_dim)
+
+        freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
         q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[src_s: src_s + tgt_s])
 
         # shape: (b * n_head, 1, head_dim)
