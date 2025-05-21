@@ -62,12 +62,12 @@ def precompute_freqs_cis(dim: int, end: int, inv_freq, theta= 10000.0):
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
     return freqs_cis
 
-def rms_norm(inputs, weight, variance_epsilon=1e-5):
-    input_dtype = inputs.dtype
-    inputs = inputs.to(torch.float32)
-    variance = inputs.pow(2).mean(-1, keepdim=True)
-    inputs = inputs * torch.rsqrt(variance + variance_epsilon)
-    return weight * inputs.to(input_dtype)
+def rms_norm(hidden_states, weight, variance_epsilon=1e-5):
+    input_dtype = hidden_states.dtype
+    hidden_states = hidden_states.to(torch.float32)
+    variance = hidden_states.pow(2).mean(-1, keepdim=True)
+    hidden_states = hidden_states * torch.rsqrt(variance + variance_epsilon)
+    return weight * hidden_states.to(input_dtype)
 
 def sample_top_p(probs, p):
     probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
