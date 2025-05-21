@@ -937,7 +937,9 @@ class LlamaLM:
                 for k in range(self.num_gpu_batches):
                     self.load_cache(i, j, k, overlap=False)
                     self.load_hidden(i, j, k)
+                    self.sync()
                     self.compute_layer(i, j, k)
+                    self.sync()
                     self.store_hidden(i, j, k)
                     self.store_cache(i, j, k, overlap=False)
             timers("generate").stop()
