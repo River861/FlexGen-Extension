@@ -633,7 +633,7 @@ class TorchDevice:
         # hidden = rms_norm(hidden_states.data, input_layernorm.data)
         hidden = rms_forward(hidden_states.data, weight=input_layernorm.data)
 
-        q = F.linear(hidden, w_q.data) * scaling
+        q = F.linear(hidden, w_q.data)
         k = F.linear(hidden, w_k.data)
         v = F.linear(hidden, w_v.data)
 
@@ -655,7 +655,7 @@ class TorchDevice:
         # shape: (b * n_head, s, head_dim)
         v = v.reshape(bsz * n_head, q_len, head_dim)
 
-        attn_weights = torch.bmm(q, k)
+        attn_weights = torch.bmm(q, k) * scaling
 
         idx = torch.arange(q_len, device=self.dev)
         causal_mask = (idx <= idx.view(q_len, 1)).view(1, 1, q_len, q_len)
@@ -711,7 +711,7 @@ class TorchDevice:
         # hidden = F.layer_norm(inputs.data, (h,), weight=input_layernorm.data)
 
         # shape: (b, 1, h)
-        q = F.linear(hidden, w_q.data) * scaling
+        q = F.linear(hidden, w_q.data)
         k = F.linear(hidden, w_k.data)
         v = F.linear(hidden, w_v.data)
 
@@ -727,7 +727,7 @@ class TorchDevice:
         q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids)
 
         # shape: (b * n_head, 1, head_dim)
-        q = q.view(b * n_head, tgt_s, head_dim)
+        q = q.view(b * n_head, tgt_s, head_dim) * scaling
         # shape: (1, b * n_head, head_dim)
         # k_new = k.permute(2, 0, 1, 3).reshape(tgt_s, b * n_head, head_dim)
         # v_new = v.permute(2, 0, 1, 3).reshape(tgt_s, b * n_head, head_dim)
