@@ -32,52 +32,52 @@ def fix_recursive_import():
     general_copy_compressed = compression.general_copy_compressed
     TorchCompressedDevice = compression.TorchCompressedDevice
 
-def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
-    ndim = x.ndim
-    assert 0 <= 1 < ndim
-    assert freqs_cis.shape == (x.shape[1], x.shape[-1])
-    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
-    return freqs_cis.view(*shape)
+# def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
+#     ndim = x.ndim
+#     assert 0 <= 1 < ndim
+#     assert freqs_cis.shape == (x.shape[1], x.shape[-1])
+#     shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+#     return freqs_cis.view(*shape)
 
-def apply_rotary_emb(
-    xq: torch.Tensor,
-    xk: torch.Tensor,
-    freqs_cis: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
-    xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
-    freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
-    xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
-    xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
-    return xq_out.type_as(xq), xk_out.type_as(xk)
+# def apply_rotary_emb(
+#     xq: torch.Tensor,
+#     xk: torch.Tensor,
+#     freqs_cis: torch.Tensor,
+# ) -> Tuple[torch.Tensor, torch.Tensor]:
+#     xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
+#     xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
+#     freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
+#     xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
+#     xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
+#     return xq_out.type_as(xq), xk_out.type_as(xk)
 
-def precompute_freqs_cis(dim: int, end: int, inv_freq, theta= 10000.0):
-    # freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
-    # freqs = freqs.cuda()
-    # inv_freq = 1.0 / (theta ** (torch.arange(0, dims_per_head, 2).float() / dims_per_head))
-    # freqs = inv_freq[: (dim // 2)]
-    freqs = inv_freq
-    t = torch.arange(end, device=freqs.device)  # type: ignore
-    freqs = torch.outer(t, freqs).float()  # type: ignore
-    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
-    return freqs_cis
+# def precompute_freqs_cis(dim: int, end: int, inv_freq, theta= 10000.0):
+#     # freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+#     # freqs = freqs.cuda()
+#     # inv_freq = 1.0 / (theta ** (torch.arange(0, dims_per_head, 2).float() / dims_per_head))
+#     # freqs = inv_freq[: (dim // 2)]
+#     freqs = inv_freq
+#     t = torch.arange(end, device=freqs.device)  # type: ignore
+#     freqs = torch.outer(t, freqs).float()  # type: ignore
+#     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
+#     return freqs_cis
 
-def rms_norm(hidden_states, weight, variance_epsilon=1e-5):
-    input_dtype = hidden_states.dtype
-    hidden_states = hidden_states.to(torch.float32)
-    variance = hidden_states.pow(2).mean(-1, keepdim=True)
-    hidden_states = hidden_states * torch.rsqrt(variance + variance_epsilon)
-    return weight * hidden_states.to(input_dtype)
+# def rms_norm(hidden_states, weight, variance_epsilon=1e-5):
+#     input_dtype = hidden_states.dtype
+#     hidden_states = hidden_states.to(torch.float32)
+#     variance = hidden_states.pow(2).mean(-1, keepdim=True)
+#     hidden_states = hidden_states * torch.rsqrt(variance + variance_epsilon)
+#     return weight * hidden_states.to(input_dtype)
 
-def sample_top_p(probs, p):
-    probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
-    probs_sum = torch.cumsum(probs_sort, dim=-1)
-    mask = probs_sum - probs_sort > p
-    probs_sort[mask] = 0.0
-    probs_sort.div_(probs_sort.sum(dim=-1, keepdim=True))
-    next_token = torch.multinomial(probs_sort, num_samples=1)
-    next_token = torch.gather(probs_idx, -1, next_token)
-    return next_token
+# def sample_top_p(probs, p):
+#     probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
+#     probs_sum = torch.cumsum(probs_sort, dim=-1)
+#     mask = probs_sum - probs_sort > p
+#     probs_sort[mask] = 0.0
+#     probs_sort.div_(probs_sort.sum(dim=-1, keepdim=True))
+#     next_token = torch.multinomial(probs_sort, num_samples=1)
+#     next_token = torch.gather(probs_idx, -1, next_token)
+#     return next_token
 
 def rms_forward(hidden_states, weight):
     variance_epsilon = 1e-05
@@ -722,8 +722,8 @@ class TorchDevice:
 
         # freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
         # q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[src_s: src_s + tgt_s])
-        position_ids = torch.arange(src_s + tgt_s, device=self.dev).unsqueeze(0).repeat(b, 1)
-        cos, sin = rotary_emb(rotary_emb_inv_freq.data, v, position_ids[:, src_s:src_s+tgt_s])
+        position_ids = torch.arange(src_s, src_s+tgt_s, device=self.dev).unsqueeze(0).repeat(b, 1)
+        cos, sin = rotary_emb(rotary_emb_inv_freq.data, v, position_ids)
         q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids)
 
         # shape: (b * n_head, 1, head_dim)
