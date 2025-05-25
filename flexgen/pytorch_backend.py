@@ -79,6 +79,61 @@ def sample_top_p(probs, p):
     next_token = torch.gather(probs_idx, -1, next_token)
     return next_token
 
+def rms_forward(hidden_states, weight):
+    variance_epsilon = 1e-05
+    input_dtype = hidden_states.dtype
+    hidden_states = hidden_states.to(torch.float32)
+    variance = hidden_states.pow(2).mean(-1, keepdim=True)
+    hidden_states = hidden_states * torch.rsqrt(variance + variance_epsilon)
+    return weight * hidden_states.to(input_dtype)
+
+def rotary_emb(inv_freq, x, position_ids):
+    # x: [bs, num_attention_heads, seq_len, head_size]
+    inv_freq_expanded = inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
+    position_ids_expanded = position_ids[:, None, :].float()
+    # Force float32 since bfloat16 loses precision on long contexts
+    # See https://github.com/huggingface/transformers/pull/29285
+    device_type = x.device.type
+    device_type = device_type if isinstance(device_type, str) and device_type != "mps" else "cpu"
+    with torch.autocast(device_type=device_type, enabled=False):
+        freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+        emb = torch.cat((freqs, freqs), dim=-1)
+        cos = emb.cos()
+        sin = emb.sin()
+    return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+
+def rotate_half(x):
+    """Rotates half the hidden dims of the input."""
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return torch.cat((-x2, x1), dim=-1)
+
+def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+    """Applies Rotary Position Embedding to the query and key tensors.
+
+    Args:
+        q (`torch.Tensor`): The query tensor.
+        k (`torch.Tensor`): The key tensor.
+        cos (`torch.Tensor`): The cosine part of the rotary embedding.
+        sin (`torch.Tensor`): The sine part of the rotary embedding.
+        position_ids (`torch.Tensor`, *optional*):
+            Deprecated and unused.
+        unsqueeze_dim (`int`, *optional*, defaults to 1):
+            The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos[position_ids] and
+            sin[position_ids] so that they can be properly broadcasted to the dimensions of q and k. For example, note
+            that cos[position_ids] and sin[position_ids] have the shape [batch_size, seq_len, head_dim]. Then, if q and
+            k have the shape [batch_size, heads, seq_len, head_dim], then setting unsqueeze_dim=1 makes
+            cos[position_ids] and sin[position_ids] broadcastable to the shapes of q and k. Similarly, if q and k have
+            the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
+    Returns:
+        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
+    """
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed, k_embed
+
 class DeviceType(Enum):
     CPU = auto()
     CUDA = auto()
@@ -574,28 +629,38 @@ class TorchDevice:
         bsz,q_len,h = hidden_states.shape
 
         head_dim = h // n_head
-        freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
         scaling = head_dim ** -0.5
         hidden = rms_norm(hidden_states.data, input_layernorm.data)
-        # hidden = F.layer_norm(hidden_states.data, (h,), weight=input_layernorm.data)
+
         q = F.linear(hidden, w_q.data) * scaling
         k = F.linear(hidden, w_k.data)
         v = F.linear(hidden, w_v.data)
 
-        q = q.view(bsz, q_len, n_head, head_dim)
-        k = k.view(bsz, q_len, n_head, head_dim)
-        v = v.view(bsz, q_len, n_head, head_dim)
+        # q = q.view(bsz, q_len, n_head, head_dim)
+        # k = k.view(bsz, q_len, n_head, head_dim)
+        # v = v.view(bsz, q_len, n_head, head_dim)
 
-        q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[:q_len])
+        # freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
+        # q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[:q_len])
 
-        # shape: (b * n_head, s, head_dim)
-        q = q.permute(0, 2, 1, 3).reshape(bsz * n_head, q_len, head_dim)
-        # shape: (b * n_head, head_dim, s)
-        k = k.permute(0, 2, 3, 1).reshape(bsz * n_head, head_dim, q_len)
-        # shape: (b * n_head, s, head_dim)
-        v = v.permute(0, 2, 1, 3).reshape(bsz * n_head, q_len, head_dim)
+        # # shape: (b * n_head, s, head_dim)
+        # q = q.permute(0, 2, 1, 3).reshape(bsz * n_head, q_len, head_dim)
+        # # shape: (b * n_head, head_dim, s)
+        # k = k.permute(0, 2, 3, 1).reshape(bsz * n_head, head_dim, q_len)
+        # # shape: (b * n_head, s, head_dim)
+        # v = v.permute(0, 2, 1, 3).reshape(bsz * n_head, q_len, head_dim)
 
-        attn_weights = torch.bmm(q, k)
+        # attn_weights = torch.bmm(q, k)
+
+        q = q.view(bsz, q_len, n_head, head_dim).permute(0, 2, 1, 3)
+        k = k.view(bsz, q_len, n_head, head_dim).permute(0, 2, 1, 3)
+        v = v.view(bsz, q_len, n_head, head_dim).permute(0, 2, 1, 3)
+
+        position_ids = torch.arange(q_len, device=self.dev).unsqueeze(0).repeat(q_len, 1)
+        cos, sin = rotary_emb(rotary_emb_inv_freq.data, v, position_ids)
+        q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids)
+
+        attn_weights = torch.matmul(q, k.transpose(2, 3))
 
         idx = torch.arange(q_len, device=self.dev)
         causal_mask = (idx <= idx.view(q_len, 1)).view(1, 1, q_len, q_len)
