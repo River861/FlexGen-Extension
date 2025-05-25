@@ -62,12 +62,12 @@ def fix_recursive_import():
 #     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
 #     return freqs_cis
 
-# def rms_norm(hidden_states, weight, variance_epsilon=1e-5):
-#     input_dtype = hidden_states.dtype
-#     hidden_states = hidden_states.to(torch.float32)
-#     variance = hidden_states.pow(2).mean(-1, keepdim=True)
-#     hidden_states = hidden_states * torch.rsqrt(variance + variance_epsilon)
-#     return weight * hidden_states.to(input_dtype)
+def rms_norm(hidden_states, weight, variance_epsilon=1e-5):
+    input_dtype = hidden_states.dtype
+    hidden_states = hidden_states.to(torch.float32)
+    variance = hidden_states.pow(2).mean(-1, keepdim=True)
+    hidden_states = hidden_states * torch.rsqrt(variance + variance_epsilon)
+    return weight * hidden_states.to(input_dtype)
 
 # def sample_top_p(probs, p):
 #     probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
@@ -79,13 +79,13 @@ def fix_recursive_import():
 #     next_token = torch.gather(probs_idx, -1, next_token)
 #     return next_token
 
-def rms_forward(hidden_states, weight):
-    variance_epsilon = 1e-05
-    input_dtype = hidden_states.dtype
-    hidden_states = hidden_states.to(torch.float32)
-    variance = hidden_states.pow(2).mean(-1, keepdim=True)
-    hidden_states = hidden_states * torch.rsqrt(variance + variance_epsilon)
-    return weight * hidden_states.to(input_dtype)
+# def rms_forward(hidden_states, weight):
+#     variance_epsilon = 1e-05
+#     input_dtype = hidden_states.dtype
+#     hidden_states = hidden_states.to(torch.float32)
+#     variance = hidden_states.pow(2).mean(-1, keepdim=True)
+#     hidden_states = hidden_states * torch.rsqrt(variance + variance_epsilon)
+#     return weight * hidden_states.to(input_dtype)
 
 def rotary_emb(inv_freq, x, position_ids):
     # x: [bs, num_attention_heads, seq_len, head_size]
@@ -630,8 +630,8 @@ class TorchDevice:
 
         head_dim = h // n_head
         scaling = head_dim ** -0.5
-        # hidden = rms_norm(hidden_states.data, input_layernorm.data)
-        hidden = rms_forward(hidden_states.data, weight=input_layernorm.data)
+        hidden = rms_norm(hidden_states.data, input_layernorm.data)
+        # hidden = rms_forward(hidden_states.data, weight=input_layernorm.data)
 
         q = F.linear(hidden, w_q.data)
         k = F.linear(hidden, w_k.data)
@@ -706,8 +706,8 @@ class TorchDevice:
         head_dim = h // n_head
         scaling = head_dim ** -0.5
 
-        # hidden = rms_norm(inputs.data, input_layernorm.data)
-        hidden = rms_forward(inputs.data, weight=input_layernorm.data)
+        hidden = rms_norm(inputs.data, input_layernorm.data)
+        # hidden = rms_forward(inputs.data, weight=input_layernorm.data)
         # hidden = F.layer_norm(inputs.data, (h,), weight=input_layernorm.data)
 
         # shape: (b, 1, h)
