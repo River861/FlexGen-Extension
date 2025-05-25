@@ -574,7 +574,7 @@ class TorchDevice:
         bsz,q_len,h = hidden_states.shape
 
         head_dim = h // n_head
-        freq_cis = precompute_freqs_cis(head_dim, 600, rotary_emb_inv_freq.data)
+        freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
         scaling = head_dim ** -0.5
         hidden = rms_norm(hidden_states.data, input_layernorm.data)
         # hidden = F.layer_norm(hidden_states.data, (h,), weight=input_layernorm.data)
