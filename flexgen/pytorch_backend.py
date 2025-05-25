@@ -640,8 +640,12 @@ class TorchDevice:
         k = k.view(bsz, q_len, n_head, head_dim)
         v = v.view(bsz, q_len, n_head, head_dim)
 
-        freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
-        q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[:q_len])
+        # freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
+        # q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[:q_len])
+
+        position_ids = torch.arange(q_len, device=self.dev).unsqueeze(0).repeat(q_len, 1)
+        cos, sin = rotary_emb(rotary_emb_inv_freq.data, v, position_ids)
+        q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids)
 
         # shape: (b * n_head, s, head_dim)
         q = q.permute(0, 2, 1, 3).reshape(bsz * n_head, q_len, head_dim)
