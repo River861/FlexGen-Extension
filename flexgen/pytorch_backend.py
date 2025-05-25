@@ -636,36 +636,19 @@ class TorchDevice:
         k = F.linear(hidden, w_k.data)
         v = F.linear(hidden, w_v.data)
 
-        # q = q.view(bsz, q_len, n_head, head_dim)
-        # k = k.view(bsz, q_len, n_head, head_dim)
-        # v = v.view(bsz, q_len, n_head, head_dim)
+        q = q.view(bsz, q_len, n_head, head_dim)
+        k = k.view(bsz, q_len, n_head, head_dim)
+        v = v.view(bsz, q_len, n_head, head_dim)
 
-        # freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
-        # q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[:q_len])
-
-        # # shape: (b * n_head, s, head_dim)
-        # q = q.permute(0, 2, 1, 3).reshape(bsz * n_head, q_len, head_dim)
-        # # shape: (b * n_head, head_dim, s)
-        # k = k.permute(0, 2, 3, 1).reshape(bsz * n_head, head_dim, q_len)
-        # # shape: (b * n_head, s, head_dim)
-        # v = v.permute(0, 2, 1, 3).reshape(bsz * n_head, q_len, head_dim)
-
-        # attn_weights = torch.bmm(q, k)
-
-        q = q.view(bsz, q_len, n_head, head_dim).permute(0, 2, 1, 3)
-        k = k.view(bsz, q_len, n_head, head_dim).permute(0, 2, 1, 3)
-        v = v.view(bsz, q_len, n_head, head_dim).permute(0, 2, 1, 3)
-
-        position_ids = torch.arange(q_len, device=self.dev).unsqueeze(0).repeat(q_len, 1)
-        cos, sin = rotary_emb(rotary_emb_inv_freq.data, v, position_ids)
-        q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids)
+        freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
+        q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[:q_len])
 
         # shape: (b * n_head, s, head_dim)
-        q = q.reshape(bsz * n_head, q_len, head_dim)
+        q = q.permute(0, 2, 1, 3).reshape(bsz * n_head, q_len, head_dim)
         # shape: (b * n_head, head_dim, s)
-        k = k.transpose(2, 3).reshape(bsz * n_head, head_dim, q_len)
+        k = k.permute(0, 2, 3, 1).reshape(bsz * n_head, head_dim, q_len)
         # shape: (b * n_head, s, head_dim)
-        v = v.reshape(bsz * n_head, q_len, head_dim)
+        v = v.permute(0, 2, 1, 3).reshape(bsz * n_head, q_len, head_dim)
 
         attn_weights = torch.bmm(q, k)
 
