@@ -630,7 +630,8 @@ class TorchDevice:
 
         head_dim = h // n_head
         scaling = head_dim ** -0.5
-        hidden = rms_norm(hidden_states.data, input_layernorm.data)
+        # hidden = rms_norm(hidden_states.data, input_layernorm.data)
+        hidden = rms_forward(hidden_states.data, weight=input_layernorm.data)
 
         q = F.linear(hidden, w_q.data) * scaling
         k = F.linear(hidden, w_k.data)
