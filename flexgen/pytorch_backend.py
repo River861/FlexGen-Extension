@@ -731,8 +731,8 @@ class TorchDevice:
         # shape: (1, b * n_head, head_dim)
         # k_new = k.permute(2, 0, 1, 3).reshape(tgt_s, b * n_head, head_dim)
         # v_new = v.permute(2, 0, 1, 3).reshape(tgt_s, b * n_head, head_dim)
-        k_new = k.view(b * n_head, tgt_s, head_dim).permute(1, 0, 2)
-        v_new = v.view(b * n_head, tgt_s, head_dim).permute(1, 0, 2)
+        k_new = k.view(b * n_head, tgt_s, head_dim).transpose(0, 1)
+        v_new = v.view(b * n_head, tgt_s, head_dim).transpose(0, 1)
 
         if isinstance(k_cache, TorchTensor):
             if attn_sparsity >= 1.0:  # Dense attention
