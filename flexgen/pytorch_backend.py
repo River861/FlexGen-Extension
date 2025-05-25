@@ -704,28 +704,35 @@ class TorchDevice:
         b, tgt_s, h = inputs.shape
         src_s = attention_mask.shape[1]
         head_dim = h // n_head
-        freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
         scaling = head_dim ** -0.5
 
-        hidden = rms_norm(inputs.data, input_layernorm.data)
+        # hidden = rms_norm(inputs.data, input_layernorm.data)
+        hidden = rms_forward(inputs.data, weight=input_layernorm.data)
         # hidden = F.layer_norm(inputs.data, (h,), weight=input_layernorm.data)
 
         # shape: (b, 1, h)
         q = F.linear(hidden, w_q.data) * scaling
         k = F.linear(hidden, w_k.data)
         v = F.linear(hidden, w_v.data)
+
         # shape: (b, 1, n_head, head_dim)
-        q = q.view(b, tgt_s, n_head, head_dim)
-        k = k.view(b, tgt_s, n_head, head_dim)
-        v = v.view(b, tgt_s, n_head, head_dim)
-        q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[src_s: src_s + tgt_s])
+        q = q.view(b, tgt_s, n_head, head_dim).permute(0, 2, 1, 3)
+        k = k.view(b, tgt_s, n_head, head_dim).permute(0, 2, 1, 3)
+        v = v.view(b, tgt_s, n_head, head_dim).permute(0, 2, 1, 3)
+
+        # freq_cis = precompute_freqs_cis(head_dim, 2048 * 2, rotary_emb_inv_freq.data)
+        # q, k = apply_rotary_emb(q, k, freqs_cis=freq_cis[src_s: src_s + tgt_s])
+        position_ids = torch.arange(tgt_s, device=self.dev).unsqueeze(0).repeat(b, 1)
+        cos, sin = rotary_emb(rotary_emb_inv_freq.data, v, position_ids)
+        q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids)
 
         # shape: (b * n_head, 1, head_dim)
-        q = q.permute(0, 2, 1, 3).reshape(b * n_head, tgt_s, head_dim)
+        q = q.reshape(b * n_head, tgt_s, head_dim)
         # shape: (1, b * n_head, head_dim)
-        k_new = k.permute(1, 0, 2, 3).reshape(tgt_s, b * n_head, head_dim)
+        k_new = k.permute(1, 0, 2).reshape(tgt_s, b * n_head, head_dim)
         # shape: (1, b * n_head, head_dim)
-        v_new = v.permute(1, 0, 2, 3).reshape(tgt_s, b * n_head, head_dim)
+        v_new = v.permute(1, 0, 2).reshape(tgt_s, b * n_head, head_dim)
+
         if isinstance(k_cache, TorchTensor):
             if attn_sparsity >= 1.0:  # Dense attention
                 if compress_cache:
