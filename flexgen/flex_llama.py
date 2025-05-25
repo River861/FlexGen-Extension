@@ -219,7 +219,7 @@ class LlamaAttention:
             # w_out
             ((h, h), dtype, path + "self_attn.o_proj.weight"),
             # input layer norm
-            ((h, ), dtype, path + "input_layernorm.weight"),
+            ((h,  ), dtype, path + "self_attn.input_layernorm.weight"),
             # rotary_embed
             ((64, ), dtype, path + "self_attn.rotary_emb.inv_freq"),
         ]
