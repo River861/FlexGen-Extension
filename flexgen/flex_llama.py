@@ -1276,7 +1276,7 @@ def run_flexgen(args):
     _, cpu_peak_mem = cpu.mem_stats()
 
     if DUMMY_WEIGHT not in args.path:
-        outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+        outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=False)
         show_str = "Outputs:\n" + 70 * '-' + "\n"
         for i in [0, len(outputs)-1]:
             show_str += f"{i}: {outputs[i]}\n"
