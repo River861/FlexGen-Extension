@@ -711,7 +711,7 @@ class TorchDevice:
         # hidden = F.layer_norm(inputs.data, (h,), weight=input_layernorm.data)
 
         # shape: (b, 1, h)
-        q = F.linear(hidden, w_q.data)
+        q = F.linear(hidden, w_q.data) * scaling
         k = F.linear(hidden, w_k.data)
         v = F.linear(hidden, w_v.data)
 
@@ -727,11 +727,12 @@ class TorchDevice:
         q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids)
 
         # shape: (b * n_head, 1, head_dim)
-        q = q.reshape(b * n_head, tgt_s, head_dim) * scaling
+        q = q.view(b * n_head, tgt_s, head_dim)
         # shape: (1, b * n_head, head_dim)
-        k_new = k.permute(2, 0, 1, 3).reshape(tgt_s, b * n_head, head_dim)
-        # shape: (1, b * n_head, head_dim)
-        v_new = v.permute(2, 0, 1, 3).reshape(tgt_s, b * n_head, head_dim)
+        # k_new = k.permute(2, 0, 1, 3).reshape(tgt_s, b * n_head, head_dim)
+        # v_new = v.permute(2, 0, 1, 3).reshape(tgt_s, b * n_head, head_dim)
+        k_new = k.view(b * n_head, tgt_s, head_dim).permute(1, 0, 2)
+        v_new = v.view(b * n_head, tgt_s, head_dim).permute(1, 0, 2)
 
         if isinstance(k_cache, TorchTensor):
             if attn_sparsity >= 1.0:  # Dense attention
