@@ -1277,8 +1277,7 @@ def run_flexgen(args):
 
     if DUMMY_WEIGHT not in args.path:
         prompts = tokenizer.batch_decode(output_ids[:, :prompt_len], skip_special_tokens=False)
-        show_str = "Outputs:\n" + 70 * '-' + "\n"
-        print(show_str)
+        print("Outputs:\n" + 70 * '-')
         print(prompts[0])
 
         show_str = "-" * 70 + "\n"
