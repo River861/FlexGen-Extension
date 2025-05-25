@@ -660,7 +660,14 @@ class TorchDevice:
         cos, sin = rotary_emb(rotary_emb_inv_freq.data, v, position_ids)
         q, k = apply_rotary_pos_emb(q, k, cos, sin, position_ids)
 
-        attn_weights = torch.matmul(q, k.transpose(2, 3))
+        # shape: (b * n_head, s, head_dim)
+        q = q.reshape(bsz * n_head, q_len, head_dim)
+        # shape: (b * n_head, head_dim, s)
+        k = k.transpose(2, 3).reshape(bsz * n_head, head_dim, q_len)
+        # shape: (b * n_head, s, head_dim)
+        v = v.reshape(bsz * n_head, q_len, head_dim)
+
+        attn_weights = torch.bmm(q, k)
 
         idx = torch.arange(q_len, device=self.dev)
         causal_mask = (idx <= idx.view(q_len, 1)).view(1, 1, q_len, q_len)
